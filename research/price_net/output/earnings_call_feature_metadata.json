@@ -1,0 +1,17 @@
+{
+  "created_utc": "2026-08-18T01:00:31.752624+00:00",
+  "source_dataset": "kurry/sp500_earnings_transcripts",
+  "source_revision": "f3ded372da8d18dc6ad98955c4558e34b5fe6d45",
+  "source_license": "MIT (per dataset card)",
+  "raw_text_redistributed": false,
+  "unique_calls": 33246,
+  "unique_symbols": 685,
+  "first_call": "2005-10-13T14:45:00",
+  "last_call": "2025-05-15T16:30:00",
+  "monthly_rows": 236,
+  "hash_features": 256,
+  "skipped_duplicates": 0,
+  "skipped_empty_or_short": 116,
+  "method": "contextual economic phrase counts plus fixed HashingVectorizer monthly means",
+  "warning": "Transparent stage-1 text baseline; not a claim of LLM-equivalent extraction."
+}
