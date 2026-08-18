@@ -7,6 +7,12 @@ on:
     paths:
       - "research/price_net/download_philadelphia_realtime.py"
       - ".github/workflows/price_net_realtime_cpi.yml"
+  pull_request:
+    branches:
+      - master
+    paths:
+      - "research/price_net/download_philadelphia_realtime.py"
+      - ".github/workflows/price_net_realtime_cpi.yml"
   workflow_dispatch:
 
 permissions:
@@ -35,7 +41,18 @@ jobs:
       - name: Download and export workbooks
         run: python research/price_net/download_philadelphia_realtime.py
 
+      - name: Upload processed real-time targets
+        uses: actions/upload-artifact@v4
+        with:
+          name: price-net-realtime-cpi
+          path: |
+            research/price_net/realtime_cpi/manifest.json
+            research/price_net/realtime_cpi/processed/quarterly_inflation_targets.csv
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Commit source-preserving exports
+        if: github.event_name != 'pull_request'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
