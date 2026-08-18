@@ -48,6 +48,7 @@ jobs:
           path: |
             research/price_net/realtime_cpi/manifest.json
             research/price_net/realtime_cpi/processed/quarterly_inflation_targets.csv
+            research/price_net/realtime_cpi/processed/maturity_vintage_headline_targets.csv
           if-no-files-found: error
           retention-days: 30
 
