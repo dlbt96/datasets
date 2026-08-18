@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Download and process Philadelphia Fed real-time CPI workbooks.
 
-The pipeline preserves the source workbooks and worksheets, reconstructs
-quarterly inflation from official first-release monthly growth, and constructs
-vintage-correct targets from the quarterly-vintage CPI matrix. For a forecast
-submitted in survey quarter s at horizon h, the maturity target is calculated
-from vintage s+h—the first SPF survey quarter in which the complete endpoint
+The source workbooks and every worksheet are preserved. Processed targets match
+the SPF convention: each quarterly CPI forecast is a discretely compounded
+quarter-over-quarter annualized percentage rate based on quarterly-average CPI,
+and an h-quarter path is the arithmetic mean of the next h quarterly rates.
+
+For a forecast submitted in survey quarter s at horizon h, the maturity target
+uses vintage s+h, the first SPF survey quarter in which the complete endpoint
 quarter is observable.
 """
 
@@ -26,6 +28,7 @@ SOURCES = {
     "pcpix_first_second_third": "https://www.philadelphiafed.org/-/media/FRBP/Assets/Surveys-And-Data/real-time-data/data-files/xlsx/pcpix_first_second_third.xlsx",
     "cpi_quarterly_vintages_monthly_observations": "https://www.philadelphiafed.org/-/media/FRBP/Assets/Surveys-And-Data/real-time-data/data-files/xlsx/cpiQvMd.xlsx",
 }
+HORIZONS = (1, 2, 4)
 
 
 def safe_name(value: str) -> str:
@@ -59,29 +62,45 @@ def parse_growth_sheet(path: Path) -> pd.DataFrame:
     return frame.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
 
 
+def path_target_from_qlevels(qlevel: pd.Series, survey_q: pd.Period, horizon: int) -> float:
+    """Average next-h SPF-style quarterly inflation rates."""
+    rates: list[float] = []
+    for step in range(horizon):
+        quarter = survey_q + step
+        previous = quarter - 1
+        p0, p1 = qlevel.get(previous, np.nan), qlevel.get(quarter, np.nan)
+        if not (np.isfinite(p0) and np.isfinite(p1) and p0 > 0 and p1 > 0):
+            return np.nan
+        rates.append(100.0 * ((p1 / p0) ** 4.0 - 1.0))
+    return float(np.mean(rates))
+
+
 def quarterly_targets(monthly: pd.DataFrame, series: str) -> pd.DataFrame:
-    output: list[dict[str, object]] = []
+    rows: list[dict[str, object]] = []
     for vintage_col in ["first", "most_recent"]:
         z = monthly[["date", vintage_col]].dropna().copy()
         z = z.loc[z[vintage_col] > -100].copy()
-        z["log_growth"] = np.log1p(z[vintage_col] / 100.0) / 12.0
-        z["index"] = 100.0 * np.exp(z["log_growth"].cumsum())
+        # Annualized discrete monthly rate -> monthly gross growth.
+        monthly_gross = (1.0 + z[vintage_col] / 100.0) ** (1.0 / 12.0)
+        z["index"] = 100.0 * monthly_gross.cumprod()
         z["quarter"] = z["date"].dt.to_period("Q")
         qlevel = z.groupby("quarter", sort=True)["index"].mean()
-        for h in [1, 2, 4]:
-            target = (400.0 / h) * np.log(qlevel.shift(-h) / qlevel)
-            for origin, value in target.dropna().items():
-                output.append(
+        for survey_q in qlevel.index:
+            for horizon in HORIZONS:
+                value = path_target_from_qlevels(qlevel, survey_q, horizon)
+                if not np.isfinite(value):
+                    continue
+                rows.append(
                     {
                         "series": series,
                         "vintage": "first_release" if vintage_col == "first" else "most_recent_release",
-                        "origin": str(origin),
-                        "survey_q": str(origin + 1),
-                        "horizon_quarters": h,
-                        "target_annualized_pct": float(value),
+                        "origin": str(survey_q - 1),
+                        "survey_q": str(survey_q),
+                        "horizon_quarters": horizon,
+                        "target_annualized_pct": value,
                     }
                 )
-    return pd.DataFrame(output)
+    return pd.DataFrame(rows)
 
 
 def maturity_vintage_targets(path: Path) -> pd.DataFrame:
@@ -104,30 +123,22 @@ def maturity_vintage_targets(path: Path) -> pd.DataFrame:
         qlevels[vintage] = levels.groupby("quarter", sort=True)["level"].mean()
 
     rows: list[dict[str, object]] = []
-    survey_quarters = sorted(qlevels)
-    for survey_q in survey_quarters:
-        origin = survey_q - 1
-        for h in [1, 2, 4]:
-            maturity = survey_q + h
+    for survey_q in sorted(qlevels):
+        for horizon in HORIZONS:
+            maturity = survey_q + horizon
             if maturity not in qlevels:
                 continue
-            endpoint = origin + h
-            levels = qlevels[maturity]
-            base_level = levels.get(origin, np.nan)
-            end_level = levels.get(endpoint, np.nan)
-            if not (np.isfinite(base_level) and np.isfinite(end_level) and base_level > 0 and end_level > 0):
+            value = path_target_from_qlevels(qlevels[maturity], survey_q, horizon)
+            if not np.isfinite(value):
                 continue
-            target = (400.0 / h) * np.log(end_level / base_level)
             rows.append(
                 {
                     "survey_q": str(survey_q),
-                    "origin": str(origin),
-                    "horizon_quarters": h,
-                    "endpoint": str(endpoint),
+                    "origin": str(survey_q - 1),
+                    "horizon_quarters": horizon,
+                    "endpoint": str(survey_q + horizon - 1),
                     "maturity_vintage": str(maturity),
-                    "base_level": float(base_level),
-                    "end_level": float(end_level),
-                    "target_annualized_pct": float(target),
+                    "target_annualized_pct": value,
                 }
             )
     return pd.DataFrame(rows).sort_values(["survey_q", "horizon_quarters"]).reset_index(drop=True)
@@ -135,9 +146,7 @@ def maturity_vintage_targets(path: Path) -> pd.DataFrame:
 
 def main() -> None:
     out = Path("research/price_net/realtime_cpi")
-    raw_dir = out / "raw"
-    csv_dir = out / "csv"
-    processed_dir = out / "processed"
+    raw_dir, csv_dir, processed_dir = out / "raw", out / "csv", out / "processed"
     raw_dir.mkdir(parents=True, exist_ok=True)
     csv_dir.mkdir(parents=True, exist_ok=True)
     processed_dir.mkdir(parents=True, exist_ok=True)
@@ -145,7 +154,6 @@ def main() -> None:
     session = requests.Session()
     session.headers.update({"User-Agent": "Mozilla/5.0 PRICE-NET academic replication"})
     records = []
-
     for key, url in SOURCES.items():
         response = session.get(url, timeout=120)
         response.raise_for_status()
@@ -158,22 +166,15 @@ def main() -> None:
             path = csv_dir / f"{key}__{safe_name(str(sheet_name))}.csv"
             frame.to_csv(path, index=False, header=False)
             exported.append({"sheet": str(sheet_name), "path": str(path), "rows": int(len(frame)), "columns": int(frame.shape[1])})
-        records.append(
-            {
-                "key": key,
-                "url": url,
-                "status_code": response.status_code,
-                "content_type": response.headers.get("content-type"),
-                "bytes": len(content),
-                "sha256": hashlib.sha256(content).hexdigest(),
-                "sheets": exported,
-            }
-        )
+        records.append({"key": key, "url": url, "status_code": response.status_code,
+                        "content_type": response.headers.get("content-type"), "bytes": len(content),
+                        "sha256": hashlib.sha256(content).hexdigest(), "sheets": exported})
 
-    headline_monthly = parse_growth_sheet(raw_dir / "pcpi_first_second_third.xlsx")
-    core_monthly = parse_growth_sheet(raw_dir / "pcpix_first_second_third.xlsx")
     release_targets = pd.concat(
-        [quarterly_targets(headline_monthly, "headline_cpi"), quarterly_targets(core_monthly, "core_cpi")],
+        [
+            quarterly_targets(parse_growth_sheet(raw_dir / "pcpi_first_second_third.xlsx"), "headline_cpi"),
+            quarterly_targets(parse_growth_sheet(raw_dir / "pcpix_first_second_third.xlsx"), "core_cpi"),
+        ],
         ignore_index=True,
     ).sort_values(["series", "vintage", "survey_q", "horizon_quarters"])
     release_path = processed_dir / "quarterly_inflation_targets.csv"
@@ -186,7 +187,7 @@ def main() -> None:
     manifest = {
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "source": "Federal Reserve Bank of Philadelphia Real-Time Data Set",
-        "target_definition": "400/h times log quarterly-average CPI at origin+h over origin",
+        "target_definition": "Arithmetic mean of next-h quarterly CPI rates, each 100*((quarterly-average CPI_t/CPI_t-1)^4-1)",
         "records": records,
         "release_target_path": str(release_path),
         "release_target_sha256": hashlib.sha256(release_path.read_bytes()).hexdigest(),
