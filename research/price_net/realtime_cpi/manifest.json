@@ -1,7 +1,7 @@
 {
-  "created_utc": "2026-08-18T20:08:40.462452+00:00",
+  "created_utc": "2026-08-18T20:45:20.331387+00:00",
   "source": "Federal Reserve Bank of Philadelphia Real-Time Data Set",
-  "target_definition": "400/h times log quarterly-average CPI at origin+h over origin",
+  "target_definition": "Arithmetic mean of next-h quarterly CPI rates, each 100*((quarterly-average CPI_t/CPI_t-1)^4-1)",
   "records": [
     {
       "key": "pcpi_first_second_third",
@@ -65,9 +65,9 @@
     }
   ],
   "release_target_path": "research/price_net/realtime_cpi/processed/quarterly_inflation_targets.csv",
-  "release_target_sha256": "73ded0e25b26b6979d5d6adb96d7ccec3c326dfb0f416305737d580fe73524a5",
+  "release_target_sha256": "6348b40f28a3c232151a5231bd73e030b2c06ee6c357a986653afdb7f13c4ca7",
   "maturity_target_path": "research/price_net/realtime_cpi/processed/maturity_vintage_headline_targets.csv",
-  "maturity_target_sha256": "5b2c5d59bcbd8c1cf241e3a129f3f4d7487b187e171c1af71bf8653116218a0f",
+  "maturity_target_sha256": "56f52bbf3faa81d5f26c382a1b84a1253e7cdac2a6058c679c68fd78c19c2fd5",
   "maturity_target_rows": 384,
   "maturity_target_first_survey_q": "1993Q3",
   "maturity_target_last_survey_q": "2026Q1"
