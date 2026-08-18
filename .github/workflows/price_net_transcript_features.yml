@@ -7,6 +7,12 @@ on:
     paths:
       - "research/price_net/build_transcript_features.py"
       - ".github/workflows/price_net_transcript_features.yml"
+  pull_request:
+    branches:
+      - master
+    paths:
+      - "research/price_net/build_transcript_features.py"
+      - ".github/workflows/price_net_transcript_features.yml"
   workflow_dispatch:
 
 permissions:
@@ -35,8 +41,6 @@ jobs:
             "pandas>=2.1" "pyarrow>=15" "numpy>=1.26" "scikit-learn>=1.4"
 
       - name: Stream corpus and build point-in-time features
-        env:
-          HF_HUB_ENABLE_HF_TRANSFER: "1"
         run: |
           python research/price_net/build_transcript_features.py \
             --output-dir research/price_net/output \
