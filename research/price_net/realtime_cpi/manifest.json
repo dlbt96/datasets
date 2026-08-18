@@ -1,0 +1,66 @@
+{
+  "created_utc": "2026-08-18T19:49:52.923013+00:00",
+  "source": "Federal Reserve Bank of Philadelphia Real-Time Data Set",
+  "records": [
+    {
+      "key": "pcpi_first_second_third",
+      "url": "https://www.philadelphiafed.org/-/media/FRBP/Assets/Surveys-And-Data/real-time-data/data-files/xlsx/pcpi_first_second_third.xlsx",
+      "status_code": 200,
+      "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "bytes": 17876,
+      "sha256": "8fefac849959731f1b9ec94d462cadffa91939169a50b484e27c96383609d47e",
+      "sheets": [
+        {
+          "sheet": "NOTES",
+          "path": "research/price_net/realtime_cpi/csv/pcpi_first_second_third__NOTES.csv",
+          "rows": 11,
+          "columns": 1
+        },
+        {
+          "sheet": "DATA",
+          "path": "research/price_net/realtime_cpi/csv/pcpi_first_second_third__DATA.csv",
+          "rows": 338,
+          "columns": 5
+        }
+      ]
+    },
+    {
+      "key": "pcpix_first_second_third",
+      "url": "https://www.philadelphiafed.org/-/media/FRBP/Assets/Surveys-And-Data/real-time-data/data-files/xlsx/pcpix_first_second_third.xlsx",
+      "status_code": 200,
+      "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "bytes": 17592,
+      "sha256": "3c93818d22fa1eeae60ecbedd0fcd4014869aa91dd19f55c34b74cce376cecfd",
+      "sheets": [
+        {
+          "sheet": "NOTES",
+          "path": "research/price_net/realtime_cpi/csv/pcpix_first_second_third__NOTES.csv",
+          "rows": 11,
+          "columns": 1
+        },
+        {
+          "sheet": "DATA",
+          "path": "research/price_net/realtime_cpi/csv/pcpix_first_second_third__DATA.csv",
+          "rows": 338,
+          "columns": 5
+        }
+      ]
+    },
+    {
+      "key": "cpi_quarterly_vintages_monthly_observations",
+      "url": "https://www.philadelphiafed.org/-/media/FRBP/Assets/Surveys-And-Data/real-time-data/data-files/xlsx/cpiQvMd.xlsx",
+      "status_code": 200,
+      "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "bytes": 594950,
+      "sha256": "b7cc298782b2d99bbff6c30500c199a78e2ee9a2da77272344a69cc796a6d1a3",
+      "sheets": [
+        {
+          "sheet": "cpi",
+          "path": "research/price_net/realtime_cpi/csv/cpi_quarterly_vintages_monthly_observations__cpi.csv",
+          "rows": 953,
+          "columns": 244
+        }
+      ]
+    }
+  ]
+}
