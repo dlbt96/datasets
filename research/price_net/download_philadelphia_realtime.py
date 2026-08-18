@@ -3,9 +3,9 @@
 
 The pipeline preserves the source workbooks and every worksheet, then builds a
 small quarterly target panel from the official first-release and most-recent
-monthly CPI growth rates.  Monthly growth is reported at an annual rate, so a
+monthly CPI growth rates. Monthly growth is reported at an annual rate, so a
 chained index is reconstructed using a one-twelfth power before quarterly
-averaging.  The resulting targets are aligned to SPF survey quarters.
+averaging. The resulting targets are aligned to SPF survey quarters.
 """
 
 from __future__ import annotations
@@ -53,14 +53,11 @@ def quarterly_targets(monthly: pd.DataFrame, series: str) -> pd.DataFrame:
     output: list[dict[str, object]] = []
     for vintage_col in ["first", "most_recent"]:
         z = monthly[["date", vintage_col]].dropna().copy()
-        # Annualized monthly percentage rate -> monthly log growth.
-        valid = z[vintage_col] > -100
-        z = z.loc[valid].copy()
+        z = z.loc[z[vintage_col] > -100].copy()
         z["log_growth"] = np.log1p(z[vintage_col] / 100.0) / 12.0
         z["index"] = 100.0 * np.exp(z["log_growth"].cumsum())
         z["quarter"] = z["date"].dt.to_period("Q")
         qlevel = z.groupby("quarter", sort=True)["index"].mean()
-        # A survey conducted in q forecasts inflation from q-1 through q-1+h.
         for h in [1, 2, 4]:
             target = (400.0 / h) * np.log(qlevel.shift(-h) / qlevel)
             for origin, value in target.dropna().items():
@@ -75,6 +72,14 @@ def quarterly_targets(monthly: pd.DataFrame, series: str) -> pd.DataFrame:
                     }
                 )
     return pd.DataFrame(output)
+
+
+def json_preview(frame: pd.DataFrame, rows: int = 15, cols: int = 18) -> list[list[object]]:
+    view = frame.iloc[:rows, :cols]
+    output: list[list[object]] = []
+    for row in view.itertuples(index=False, name=None):
+        output.append([None if pd.isna(x) else str(x) for x in row])
+    return output
 
 
 def main() -> None:
@@ -124,15 +129,18 @@ def main() -> None:
     headline_monthly = parse_growth_sheet(raw_dir / "pcpi_first_second_third.xlsx")
     core_monthly = parse_growth_sheet(raw_dir / "pcpix_first_second_third.xlsx")
     targets = pd.concat(
-        [
-            quarterly_targets(headline_monthly, "headline_cpi"),
-            quarterly_targets(core_monthly, "core_cpi"),
-        ],
+        [quarterly_targets(headline_monthly, "headline_cpi"), quarterly_targets(core_monthly, "core_cpi")],
         ignore_index=True,
     ).sort_values(["series", "vintage", "survey_q", "horizon_quarters"])
     target_path = processed_dir / "quarterly_inflation_targets.csv"
     targets.to_csv(target_path, index=False)
 
+    vintage_matrix = pd.read_excel(
+        raw_dir / "cpi_quarterly_vintages_monthly_observations.xlsx",
+        sheet_name="cpi",
+        header=None,
+        engine="openpyxl",
+    )
     target_summary = (
         targets.groupby(["series", "vintage", "horizon_quarters"])
         .agg(rows=("target_annualized_pct", "size"), first_survey_q=("survey_q", "min"), last_survey_q=("survey_q", "max"))
@@ -147,6 +155,8 @@ def main() -> None:
         "processed_target_path": str(target_path),
         "processed_target_sha256": hashlib.sha256(target_path.read_bytes()).hexdigest(),
         "processed_target_summary": target_summary,
+        "quarterly_vintage_matrix_shape": [int(vintage_matrix.shape[0]), int(vintage_matrix.shape[1])],
+        "quarterly_vintage_matrix_preview": json_preview(vintage_matrix),
     }
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(json.dumps(manifest, indent=2))
