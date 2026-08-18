@@ -1,5 +1,5 @@
 {
-  "created_utc": "2026-08-18T20:02:09.969863+00:00",
+  "created_utc": "2026-08-18T20:04:07.533225+00:00",
   "source": "Federal Reserve Bank of Philadelphia Real-Time Data Set",
   "target_definition": "400/h times log quarterly-average chained index at origin+h over origin",
   "records": [
@@ -65,7 +65,7 @@
     }
   ],
   "processed_target_path": "research/price_net/realtime_cpi/processed/quarterly_inflation_targets.csv",
-  "processed_target_sha256": "73ded0e25b26b6979d5d6adb96d7ccec3c326dfb0f416305737d580fe73524a5",
+  "processed_target_sha256": "7005a85ac4de4d6e3beaf8d7aa09515e0891905fd3dfd76b85b2ddbbbcf650b8",
   "processed_target_summary": [
     {
       "series": "core_cpi",
