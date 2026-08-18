@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Download and process Philadelphia Fed real-time CPI workbooks.
 
-The pipeline preserves the source workbooks and every worksheet, then builds a
-small quarterly target panel from the official first-release and most-recent
-monthly CPI growth rates. Monthly growth is reported at an annual rate, so a
-chained index is reconstructed using a one-twelfth power before quarterly
-averaging. The resulting targets are aligned to SPF survey quarters.
+The pipeline preserves the source workbooks and worksheets, reconstructs
+quarterly inflation from official first-release monthly growth, and constructs
+vintage-correct targets from the quarterly-vintage CPI matrix. For a forecast
+submitted in survey quarter s at horizon h, the maturity target is calculated
+from vintage s+h—the first SPF survey quarter in which the complete endpoint
+quarter is observable.
 """
 
 from __future__ import annotations
@@ -30,6 +31,15 @@ SOURCES = {
 def safe_name(value: str) -> str:
     value = re.sub(r"[^A-Za-z0-9._-]+", "_", value.strip())
     return value.strip("_") or "sheet"
+
+
+def parse_quarter_label(value: object) -> pd.Period | None:
+    match = re.fullmatch(r"CPI(\d{2})Q([1-4])", str(value).strip(), flags=re.I)
+    if not match:
+        return None
+    yy, quarter = int(match.group(1)), int(match.group(2))
+    year = 1900 + yy if yy >= 65 else 2000 + yy
+    return pd.Period(f"{year}Q{quarter}", freq="Q")
 
 
 def parse_growth_sheet(path: Path) -> pd.DataFrame:
@@ -74,12 +84,53 @@ def quarterly_targets(monthly: pd.DataFrame, series: str) -> pd.DataFrame:
     return pd.DataFrame(output)
 
 
-def json_preview(frame: pd.DataFrame, rows: int = 15, cols: int = 18) -> list[list[object]]:
-    view = frame.iloc[:rows, :cols]
-    output: list[list[object]] = []
-    for row in view.itertuples(index=False, name=None):
-        output.append([None if pd.isna(x) else str(x) for x in row])
-    return output
+def maturity_vintage_targets(path: Path) -> pd.DataFrame:
+    matrix = pd.read_excel(path, sheet_name="cpi", header=0, engine="openpyxl")
+    date_col = matrix.columns[0]
+    matrix[date_col] = pd.to_datetime(
+        matrix[date_col].astype(str).str.replace(":", "-", regex=False) + "-01",
+        errors="coerce",
+    )
+    matrix = matrix.dropna(subset=[date_col]).copy()
+    matrix["observation_quarter"] = matrix[date_col].dt.to_period("Q")
+
+    qlevels: dict[pd.Period, pd.Series] = {}
+    for col in matrix.columns[1:]:
+        vintage = parse_quarter_label(col)
+        if vintage is None:
+            continue
+        values = pd.to_numeric(matrix[col], errors="coerce")
+        levels = pd.DataFrame({"quarter": matrix["observation_quarter"], "level": values})
+        qlevels[vintage] = levels.groupby("quarter", sort=True)["level"].mean()
+
+    rows: list[dict[str, object]] = []
+    survey_quarters = sorted(qlevels)
+    for survey_q in survey_quarters:
+        origin = survey_q - 1
+        for h in [1, 2, 4]:
+            maturity = survey_q + h
+            if maturity not in qlevels:
+                continue
+            endpoint = origin + h
+            levels = qlevels[maturity]
+            base_level = levels.get(origin, np.nan)
+            end_level = levels.get(endpoint, np.nan)
+            if not (np.isfinite(base_level) and np.isfinite(end_level) and base_level > 0 and end_level > 0):
+                continue
+            target = (400.0 / h) * np.log(end_level / base_level)
+            rows.append(
+                {
+                    "survey_q": str(survey_q),
+                    "origin": str(origin),
+                    "horizon_quarters": h,
+                    "endpoint": str(endpoint),
+                    "maturity_vintage": str(maturity),
+                    "base_level": float(base_level),
+                    "end_level": float(end_level),
+                    "target_annualized_pct": float(target),
+                }
+            )
+    return pd.DataFrame(rows).sort_values(["survey_q", "horizon_quarters"]).reset_index(drop=True)
 
 
 def main() -> None:
@@ -106,14 +157,7 @@ def main() -> None:
         for sheet_name, frame in sheets.items():
             path = csv_dir / f"{key}__{safe_name(str(sheet_name))}.csv"
             frame.to_csv(path, index=False, header=False)
-            exported.append(
-                {
-                    "sheet": str(sheet_name),
-                    "path": str(path),
-                    "rows": int(len(frame)),
-                    "columns": int(frame.shape[1]),
-                }
-            )
+            exported.append({"sheet": str(sheet_name), "path": str(path), "rows": int(len(frame)), "columns": int(frame.shape[1])})
         records.append(
             {
                 "key": key,
@@ -128,35 +172,29 @@ def main() -> None:
 
     headline_monthly = parse_growth_sheet(raw_dir / "pcpi_first_second_third.xlsx")
     core_monthly = parse_growth_sheet(raw_dir / "pcpix_first_second_third.xlsx")
-    targets = pd.concat(
+    release_targets = pd.concat(
         [quarterly_targets(headline_monthly, "headline_cpi"), quarterly_targets(core_monthly, "core_cpi")],
         ignore_index=True,
     ).sort_values(["series", "vintage", "survey_q", "horizon_quarters"])
-    target_path = processed_dir / "quarterly_inflation_targets.csv"
-    targets.to_csv(target_path, index=False)
+    release_path = processed_dir / "quarterly_inflation_targets.csv"
+    release_targets.to_csv(release_path, index=False)
 
-    vintage_matrix = pd.read_excel(
-        raw_dir / "cpi_quarterly_vintages_monthly_observations.xlsx",
-        sheet_name="cpi",
-        header=None,
-        engine="openpyxl",
-    )
-    target_summary = (
-        targets.groupby(["series", "vintage", "horizon_quarters"])
-        .agg(rows=("target_annualized_pct", "size"), first_survey_q=("survey_q", "min"), last_survey_q=("survey_q", "max"))
-        .reset_index()
-        .to_dict(orient="records")
-    )
+    maturity_targets = maturity_vintage_targets(raw_dir / "cpi_quarterly_vintages_monthly_observations.xlsx")
+    maturity_path = processed_dir / "maturity_vintage_headline_targets.csv"
+    maturity_targets.to_csv(maturity_path, index=False)
+
     manifest = {
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "source": "Federal Reserve Bank of Philadelphia Real-Time Data Set",
-        "target_definition": "400/h times log quarterly-average chained index at origin+h over origin",
+        "target_definition": "400/h times log quarterly-average CPI at origin+h over origin",
         "records": records,
-        "processed_target_path": str(target_path),
-        "processed_target_sha256": hashlib.sha256(target_path.read_bytes()).hexdigest(),
-        "processed_target_summary": target_summary,
-        "quarterly_vintage_matrix_shape": [int(vintage_matrix.shape[0]), int(vintage_matrix.shape[1])],
-        "quarterly_vintage_matrix_preview": json_preview(vintage_matrix),
+        "release_target_path": str(release_path),
+        "release_target_sha256": hashlib.sha256(release_path.read_bytes()).hexdigest(),
+        "maturity_target_path": str(maturity_path),
+        "maturity_target_sha256": hashlib.sha256(maturity_path.read_bytes()).hexdigest(),
+        "maturity_target_rows": int(len(maturity_targets)),
+        "maturity_target_first_survey_q": maturity_targets["survey_q"].min(),
+        "maturity_target_last_survey_q": maturity_targets["survey_q"].max(),
     }
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(json.dumps(manifest, indent=2))
