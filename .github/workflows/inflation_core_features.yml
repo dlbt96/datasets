@@ -1,0 +1,53 @@
+name: Inflation core real-time features
+
+on:
+  push:
+    branches:
+      - inflation-systematic-research
+    paths:
+      - "research/inflation_systematic/build_core_external_features.py"
+      - ".github/workflows/inflation_core_features.yml"
+  pull_request:
+    branches:
+      - master
+    paths:
+      - "research/inflation_systematic/build_core_external_features.py"
+      - ".github/workflows/inflation_core_features.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-core-features:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: inflation-systematic-research
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: python -m pip install "numpy>=1.26" "pandas>=2.1" "requests>=2.31"
+      - name: Download FRED-MD archives
+        run: |
+          set -euo pipefail
+          mkdir -p research/inflation_systematic/core_external/raw
+          curl --fail --location --retry 6 --retry-all-errors --connect-timeout 30 --max-time 1200 \
+            https://www.stlouisfed.org/-/media/project/frbstl/stlouisfed/research/fred-md/historical_fred-md.zip \
+            --output research/inflation_systematic/core_external/raw/fred_md_1999_2014.zip
+          curl --fail --location --retry 6 --retry-all-errors --connect-timeout 30 --max-time 1200 \
+            https://www.stlouisfed.org/-/media/project/frbstl/stlouisfed/research/fred-md/historical-vintages-of-fred-md-2015-01-to-2025-12.zip \
+            --output research/inflation_systematic/core_external/raw/fred_md_2015_2025.zip
+      - name: Build compact features
+        run: python research/inflation_systematic/build_core_external_features.py
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: inflation-systematic-core-external
+          path: inflation_systematic_core_external.zip
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
