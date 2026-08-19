@@ -37,6 +37,16 @@ jobs:
           python -m pip install "numpy>=1.26" "pandas>=2.1" "pyarrow>=15" \
             "requests>=2.31" "beautifulsoup4>=4.12" "lxml>=5" "openpyxl>=3.1"
 
+      - name: Add public earnings-call price features
+        run: |
+          mkdir -p research/inflation_systematic/external_data/raw/earnings_calls
+          curl --fail --location --retry 3 \
+            https://raw.githubusercontent.com/dlbt96/datasets/price-net-transcripts/research/price_net/output/earnings_call_monthly_features.csv \
+            --output research/inflation_systematic/external_data/raw/earnings_calls/earnings_call_monthly_features.csv
+          curl --fail --location --retry 3 \
+            https://raw.githubusercontent.com/dlbt96/datasets/price-net-transcripts/research/price_net/output/earnings_call_feature_metadata.json \
+            --output research/inflation_systematic/external_data/raw/earnings_calls/earnings_call_feature_metadata.json
+
       - name: Download and condense public data
         run: python research/inflation_systematic/download_external_public.py
 
