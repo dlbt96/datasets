@@ -1,0 +1,49 @@
+name: Inflation systematic public-data build
+
+on:
+  push:
+    branches:
+      - inflation-systematic-research
+    paths:
+      - "research/inflation_systematic/download_external_public.py"
+      - ".github/workflows/inflation_systematic_data.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-public-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: inflation-systematic-research
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "numpy>=1.26" "pandas>=2.1" "pyarrow>=15" \
+            "requests>=2.31" "beautifulsoup4>=4.12" "lxml>=5" "openpyxl>=3.1"
+
+      - name: Download and condense public data
+        run: python research/inflation_systematic/download_external_public.py
+
+      - name: Show output inventory
+        run: |
+          find research/inflation_systematic/external_data -maxdepth 3 -type f -printf '%p %s bytes\n' | sort
+          ls -lh inflation_systematic_external_data.zip
+
+      - name: Upload compact data artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: inflation-systematic-external-data
+          path: inflation_systematic_external_data.zip
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
