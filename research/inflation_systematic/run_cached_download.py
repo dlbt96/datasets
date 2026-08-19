@@ -28,7 +28,8 @@ def cached_download(url: str, path: Path, *, optional: bool = False, timeout: in
         })
         print(f"using cached archive {path} ({len(data):,} bytes)", flush=True)
         return path
-    return original_download(url, path, optional=optional, timeout=timeout)
+    effective_timeout = min(timeout, 45) if optional else timeout
+    return original_download(url, path, optional=optional, timeout=effective_timeout)
 
 
 module.download = cached_download
