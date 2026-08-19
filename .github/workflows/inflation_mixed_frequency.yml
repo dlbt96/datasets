@@ -7,6 +7,12 @@ on:
     paths:
       - "research/inflation_systematic/build_mixed_frequency_nowcast.py"
       - ".github/workflows/inflation_mixed_frequency.yml"
+  pull_request:
+    branches:
+      - master
+    paths:
+      - "research/inflation_systematic/build_mixed_frequency_nowcast.py"
+      - ".github/workflows/inflation_mixed_frequency.yml"
   workflow_dispatch:
 
 permissions:
