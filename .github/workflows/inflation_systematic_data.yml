@@ -6,12 +6,14 @@ on:
       - inflation-systematic-research
     paths:
       - "research/inflation_systematic/download_external_public.py"
+      - "research/inflation_systematic/run_cached_download.py"
       - ".github/workflows/inflation_systematic_data.yml"
   pull_request:
     branches:
       - master
     paths:
       - "research/inflation_systematic/download_external_public.py"
+      - "research/inflation_systematic/run_cached_download.py"
       - ".github/workflows/inflation_systematic_data.yml"
   workflow_dispatch:
 
@@ -37,6 +39,21 @@ jobs:
           python -m pip install "numpy>=1.26" "pandas>=2.1" "pyarrow>=15" \
             "requests>=2.31" "beautifulsoup4>=4.12" "lxml>=5" "openpyxl>=3.1"
 
+      - name: Predownload large FRED vintage archives with retries
+        run: |
+          set -euo pipefail
+          mkdir -p research/inflation_systematic/external_data/raw
+          curl --fail --location --retry 6 --retry-all-errors --connect-timeout 30 --max-time 1200 \
+            https://www.stlouisfed.org/-/media/project/frbstl/stlouisfed/research/fred-md/historical_fred-md.zip \
+            --output research/inflation_systematic/external_data/raw/fred_md_1999_2014.zip
+          curl --fail --location --retry 6 --retry-all-errors --connect-timeout 30 --max-time 1200 \
+            https://www.stlouisfed.org/-/media/project/frbstl/stlouisfed/research/fred-md/historical-vintages-of-fred-md-2015-01-to-2025-12.zip \
+            --output research/inflation_systematic/external_data/raw/fred_md_2015_2025.zip
+          curl --fail --location --retry 4 --retry-all-errors --connect-timeout 30 --max-time 1200 \
+            https://www.stlouisfed.org/-/media/project/frbstl/stlouisfed/research/fred-md/historical-vintages-of-fred-qd-2018-05-to-2025-12.zip \
+            --output research/inflation_systematic/external_data/raw/fred_qd_2018_2025.zip || true
+          ls -lh research/inflation_systematic/external_data/raw/fred_*.zip
+
       - name: Add public earnings-call price features
         run: |
           mkdir -p research/inflation_systematic/external_data/raw/earnings_calls
@@ -48,7 +65,7 @@ jobs:
             --output research/inflation_systematic/external_data/raw/earnings_calls/earnings_call_feature_metadata.json
 
       - name: Download and condense public data
-        run: python research/inflation_systematic/download_external_public.py
+        run: python research/inflation_systematic/run_cached_download.py
 
       - name: Export compact features as portable CSV
         run: |
