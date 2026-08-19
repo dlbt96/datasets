@@ -7,6 +7,12 @@ on:
     paths:
       - "research/inflation_systematic/download_external_public.py"
       - ".github/workflows/inflation_systematic_data.yml"
+  pull_request:
+    branches:
+      - master
+    paths:
+      - "research/inflation_systematic/download_external_public.py"
+      - ".github/workflows/inflation_systematic_data.yml"
   workflow_dispatch:
 
 permissions:
