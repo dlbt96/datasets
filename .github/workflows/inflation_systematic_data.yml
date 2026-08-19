@@ -50,6 +50,24 @@ jobs:
       - name: Download and condense public data
         run: python research/inflation_systematic/download_external_public.py
 
+      - name: Export compact features as portable CSV
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import pandas as pd
+          import zipfile
+          root = Path('research/inflation_systematic/external_data')
+          made = []
+          for path in root.rglob('*.parquet'):
+              out = path.with_suffix('.csv.gz')
+              pd.read_parquet(path).to_csv(out, index=False, compression='gzip')
+              made.append(out)
+          with zipfile.ZipFile('inflation_systematic_external_data.zip', 'a', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+              for path in made:
+                  zf.write(path, path.as_posix())
+          print('portable CSV exports:', [str(x) for x in made])
+          PY
+
       - name: Show output inventory
         run: |
           find research/inflation_systematic/external_data -maxdepth 3 -type f -printf '%p %s bytes\n' | sort
