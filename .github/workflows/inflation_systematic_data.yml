@@ -1,0 +1,100 @@
+name: Inflation systematic public-data build
+
+on:
+  push:
+    branches:
+      - inflation-systematic-research
+    paths:
+      - "research/inflation_systematic/download_external_public.py"
+      - "research/inflation_systematic/run_cached_download.py"
+      - ".github/workflows/inflation_systematic_data.yml"
+  pull_request:
+    branches:
+      - master
+    paths:
+      - "research/inflation_systematic/download_external_public.py"
+      - "research/inflation_systematic/run_cached_download.py"
+      - ".github/workflows/inflation_systematic_data.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-public-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: inflation-systematic-research
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "numpy>=1.26" "pandas>=2.1" "pyarrow>=15" \
+            "requests>=2.31" "beautifulsoup4>=4.12" "lxml>=5" "openpyxl>=3.1"
+
+      - name: Predownload large FRED vintage archives with retries
+        run: |
+          set -euo pipefail
+          mkdir -p research/inflation_systematic/external_data/raw
+          curl --fail --location --retry 6 --retry-all-errors --connect-timeout 30 --max-time 1200 \
+            https://www.stlouisfed.org/-/media/project/frbstl/stlouisfed/research/fred-md/historical_fred-md.zip \
+            --output research/inflation_systematic/external_data/raw/fred_md_1999_2014.zip
+          curl --fail --location --retry 6 --retry-all-errors --connect-timeout 30 --max-time 1200 \
+            https://www.stlouisfed.org/-/media/project/frbstl/stlouisfed/research/fred-md/historical-vintages-of-fred-md-2015-01-to-2025-12.zip \
+            --output research/inflation_systematic/external_data/raw/fred_md_2015_2025.zip
+          curl --fail --location --retry 4 --retry-all-errors --connect-timeout 30 --max-time 1200 \
+            https://www.stlouisfed.org/-/media/project/frbstl/stlouisfed/research/fred-md/historical-vintages-of-fred-qd-2018-05-to-2025-12.zip \
+            --output research/inflation_systematic/external_data/raw/fred_qd_2018_2025.zip || true
+          ls -lh research/inflation_systematic/external_data/raw/fred_*.zip
+
+      - name: Add public earnings-call price features
+        run: |
+          mkdir -p research/inflation_systematic/external_data/raw/earnings_calls
+          curl --fail --location --retry 3 \
+            https://raw.githubusercontent.com/dlbt96/datasets/price-net-transcripts/research/price_net/output/earnings_call_monthly_features.csv \
+            --output research/inflation_systematic/external_data/raw/earnings_calls/earnings_call_monthly_features.csv
+          curl --fail --location --retry 3 \
+            https://raw.githubusercontent.com/dlbt96/datasets/price-net-transcripts/research/price_net/output/earnings_call_feature_metadata.json \
+            --output research/inflation_systematic/external_data/raw/earnings_calls/earnings_call_feature_metadata.json
+
+      - name: Download and condense public data
+        run: python research/inflation_systematic/run_cached_download.py
+
+      - name: Export compact features as portable CSV
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import pandas as pd
+          import zipfile
+          root = Path('research/inflation_systematic/external_data')
+          made = []
+          for path in root.rglob('*.parquet'):
+              out = path.with_suffix('.csv.gz')
+              pd.read_parquet(path).to_csv(out, index=False, compression='gzip')
+              made.append(out)
+          with zipfile.ZipFile('inflation_systematic_external_data.zip', 'a', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+              for path in made:
+                  zf.write(path, path.as_posix())
+          print('portable CSV exports:', [str(x) for x in made])
+          PY
+
+      - name: Show output inventory
+        run: |
+          find research/inflation_systematic/external_data -maxdepth 3 -type f -printf '%p %s bytes\n' | sort
+          ls -lh inflation_systematic_external_data.zip
+
+      - name: Upload compact data artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: inflation-systematic-external-data
+          path: inflation_systematic_external_data.zip
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
